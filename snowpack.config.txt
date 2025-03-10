@@ -1,0 +1,29 @@
+// snowpack.config.js
+module.exports = {
+    mount: {
+      // Mount directories to routes
+      public: '/',
+      src: '/dist',
+    },
+    plugins: [
+      // Add plugins for processing files
+    ],
+    packageOptions: {
+      // Enable importing CSS as modules
+      source: 'remote',
+      types: true,
+    },
+    devOptions: {
+      // Configure development options
+      open: 'none',
+    },
+    buildOptions: {
+      // Configure build options
+    },
+    optimize: {
+      // Optimization options
+      bundle: true,
+      minify: true,
+      target: 'es2018',
+    },
+  };

@@ -1,0 +1,9 @@
+{
+  "imports": {
+    "@codemirror/basic-setup": "./@codemirror/basic-setup.js",
+    "@codemirror/commands": "./@codemirror/commands.js",
+    "@codemirror/lang-json": "./@codemirror/lang-json.js",
+    "@codemirror/view": "./@codemirror/view.js",
+    "bootstrap": "./bootstrap.js"
+  }
+}
