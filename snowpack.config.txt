@@ -27,3 +27,39 @@ module.exports = {
       target: 'es2018',
     },
   };
+   "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "snowpack dev",
+    "build": "snowpack build"
+  },
+  
+  
+  //?
+  npm uninstall snowpack
+npm install --save-dev vite
+"scripts": {
+  "dev": "vite",
+  "build": "vite build",
+  "preview": "vite preview"
+}
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  server: {
+    port: 3000, // Change if needed
+  },
+  build: {
+    outDir: "dist", // Output folder
+  },
+});
+
+"scripts": {
+  "dev": "vite",
+  "build": "vite build",
+  "preview": "vite preview"
+}
+
+npm create vite@latest
+
+npm run dev
+npm run build

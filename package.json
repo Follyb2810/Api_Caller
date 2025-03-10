@@ -3,8 +3,9 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "snowpack dev"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "keywords": [],
   "author": "",
@@ -12,20 +13,20 @@
   "description": "",
   "dependencies": {
     "@codemirror/autocomplete": "^6.4.2",
-    "@codemirror/state": "^6.2.0",
-    "@codemirror/view": "^6.9.1",
     "@codemirror/commands": "^6.2.3",
-    "@codemirror/language": "^6.6.0",
     "@codemirror/lang-json": "^6.0.1",
+    "@codemirror/language": "^6.6.0",
     "@codemirror/lint": "^6.2.0",
     "@codemirror/search": "^6.3.0",
+    "@codemirror/state": "^6.2.0",
     "@codemirror/theme-one-dark": "^6.1.1",
-    "codemirror": "^6.0.1",
+    "@codemirror/view": "^6.9.1",
     "axios": "^1.8.2",
     "bootstrap": "^5.3.3",
+    "codemirror": "^6.0.1",
     "pretty-bytes": "^6.1.1"
   },
   "devDependencies": {
-    "snowpack": "^3.8.8"
+    "vite": "^6.2.1"
   }
 }
