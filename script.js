@@ -76,52 +76,7 @@ axios.interceptors.response.use(updateEndTime,e=>{
 
 const {requestEditor,updateResponseEditor} = setupEditor()
 
-// form.addEventListener('submit',(e)=>{
-//     e.preventDefault()
-    
-//     const formData = new FormData();
 
-//     // Add multipart fields to FormData
-//     multipartFieldsContainer.querySelectorAll('[data-multipart-field]').forEach(field => {
-//         const key = field.querySelector('[data-key]').value;
-//         const fieldType = field.querySelector('[data-field-type]').value;
-
-//         if (fieldType === 'file') {
-//             const file = field.querySelector('[data-file]').files[0];
-//             if (file) formData.append(key, file);
-//         } else {
-//             const text = field.querySelector('[data-text]').value;
-//             if (text) formData.append(key, text);
-//         }
-//     });
-
-//     // Add query params and headers
-//     const params = keyValuePairsToObject(queryParamsContainer);
-//     const headers = keyValuePairsToObject(requestHeadersContainer);
-    
-//     let data;
-//     try {
-//         data  = JSON.parse(requestEditor.state.doc.toString() || null)
-//     } catch (error) {
-//         alert('json data is malforme')
-//         return
-//     }
-//     axios({
-//         url:document.querySelector('[data-url]').value,
-//         method:document.querySelector('[data-method]').value,
-//         params,
-//         headers,
-//         data,
-//     })
-//     .catch((e)=>e)
-//     .then((response)=>{
-//         dataResponseSection.classList.remove('d-none')
-//         updateResponseDetails(response)
-//         updateResponseEditor(response.data)
-//         updateResponseHeaders(response.headers)
-//         console.log(response)
-//     })
-// })
 form.addEventListener('submit', (e) => {
     e.preventDefault();
 
