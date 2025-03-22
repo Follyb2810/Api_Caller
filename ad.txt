@@ -1,0 +1,924 @@
+import 'bootstrap'
+import 'bootstrap/dist/css/bootstrap.min.css'
+import axios from 'axios'
+import prettyBytes from 'pretty-bytes'
+import setupEditor from './setupEditor'
+
+// DOM Elements
+const form = document.querySelector('[data-form]')
+const queryParamsContainer = document.querySelector('[data-query-params]')
+const requestHeadersContainer = document.querySelector('[data-request-headers]')
+const jsonContainer = document.querySelector('[data-json-request-body]')
+const keyValueTemplate = document.querySelector('[data-key-value-template]')
+const addQueryParamsBtn = document.querySelector('[data-add-query-param-btn]')
+const addRequestHeadersBtn = document.querySelector('[data-add-request-headers-btn]')
+const dataResponseSection = document.querySelector('[data-response-section]')
+const ResponseHeaderContainer = document.querySelector('[data-response-headers]')
+const ResponseStatus = document.querySelector('[data-status]')
+const ResponseTime = document.querySelector('[data-time]')
+const ResponseSize = document.querySelector('[data-size]')
+const multipartFieldsContainer = document.querySelector('[data-multipart-fields]')
+const addMultipartFieldBtn = document.querySelector('[data-add-multipart-field]')
+const multipartFieldTemplate = document.querySelector('[data-multipart-field-template]')
+const bodyTypeSelector = document.querySelector('[data-body-type]')
+const urlInput = document.querySelector('[data-url]')
+const methodSelect = document.querySelector('[data-method]')
+const saveRequestBtn = document.querySelector('[data-save-request]')
+const loadRequestBtn = document.querySelector('[data-load-request]')
+const requestHistoryList = document.querySelector('[data-request-history]')
+const collectionSelect = document.querySelector('[data-collection-select]')
+const saveToCollectionBtn = document.querySelector('[data-save-to-collection]')
+const newCollectionBtn = document.querySelector('[data-new-collection]')
+const authTab = document.querySelector('#auth')
+const basicAuthInputs = document.querySelector('[data-basic-auth]')
+const bearerTokenInput = document.querySelector('[data-bearer-token]')
+const authTypeSelect = document.querySelector('[data-auth-type]')
+
+// Initialize editors
+const { requestEditor, updateResponseEditor } = setupEditor()
+
+// Save current environment variables
+let environment = {
+    variables: {},
+    active: 'Default'
+}
+
+// Load saved environment from localStorage
+try {
+    const savedEnv = localStorage.getItem('apiCallerEnvironment')
+    if (savedEnv) {
+        environment = JSON.parse(savedEnv)
+    }
+} catch (error) {
+    console.error('Failed to load environment:', error)
+}
+
+// Setup environment variables manager
+function setupEnvironment() {
+    const environmentVarsContainer = document.querySelector('[data-environment-vars]')
+    const addEnvironmentVarBtn = document.querySelector('[data-add-environment-var]')
+    const environmentSelector = document.querySelector('[data-environment-selector]')
+    const newEnvironmentBtn = document.querySelector('[data-new-environment]')
+    
+    // Populate environment selector
+    function updateEnvironmentSelector() {
+        environmentSelector.innerHTML = ''
+        Object.keys(environment.variables).forEach(env => {
+            const option = document.createElement('option')
+            option.value = env
+            option.textContent = env
+            if (env === environment.active) {
+                option.selected = true
+            }
+            environmentSelector.appendChild(option)
+        })
+    }
+    
+    // Initialize with default environment if empty
+    if (Object.keys(environment.variables).length === 0) {
+        environment.variables['Default'] = {}
+    }
+    
+    updateEnvironmentSelector()
+    
+    // Add environment var
+    addEnvironmentVarBtn.addEventListener('click', () => {
+        const element = keyValueTemplate.content.cloneNode(true)
+        element.querySelector('[data-remove-btn]').addEventListener('click', (e) => {
+            e.target.closest('[data-key-value-pair]').remove()
+            saveEnvironment()
+        })
+        environmentVarsContainer.appendChild(element)
+    })
+    
+    // Handle environment change
+    environmentSelector.addEventListener('change', () => {
+        environment.active = environmentSelector.value
+        updateEnvironmentVars()
+        saveEnvironment()
+    })
+    
+    // Create new environment
+    newEnvironmentBtn.addEventListener('click', () => {
+        const name = prompt('New environment name:')
+        if (name && !environment.variables[name]) {
+            environment.variables[name] = {}
+            environment.active = name
+            updateEnvironmentSelector()
+            updateEnvironmentVars()
+            saveEnvironment()
+        }
+    })
+    
+    // Update environment variables display
+    function updateEnvironmentVars() {
+        environmentVarsContainer.innerHTML = ''
+        const vars = environment.variables[environment.active]
+        for (const [key, value] of Object.entries(vars)) {
+            const element = keyValueTemplate.content.cloneNode(true)
+            element.querySelector('[data-key]').value = key
+            element.querySelector('[data-value]').value = value
+            element.querySelector('[data-remove-btn]').addEventListener('click', (e) => {
+                e.target.closest('[data-key-value-pair]').remove()
+                saveEnvironment()
+            })
+            environmentVarsContainer.appendChild(element)
+        }
+        if (Object.keys(vars).length === 0) {
+            addEnvironmentVarBtn.click()
+        }
+    }
+    
+    // Save environment variables
+    function saveEnvironment() {
+        const pairs = environmentVarsContainer.querySelectorAll('[data-key-value-pair]')
+        const vars = {}
+        pairs.forEach(pair => {
+            const key = pair.querySelector('[data-key]').value
+            const value = pair.querySelector('[data-value]').value
+            if (key) {
+                vars[key] = value
+            }
+        })
+        environment.variables[environment.active] = vars
+        localStorage.setItem('apiCallerEnvironment', JSON.stringify(environment))
+    }
+    
+    // Update input fields with environment variables
+    function applyEnvironmentVars(text) {
+        if (!text) return text
+        const vars = environment.variables[environment.active]
+        let result = text
+        for (const [key, value] of Object.entries(vars)) {
+            const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g')
+            result = result.replace(regex, value)
+        }
+        return result
+    }
+    
+    // Initial setup
+    updateEnvironmentVars()
+    
+    // Expose necessary functions
+    return {
+        saveEnvironment,
+        applyEnvironmentVars,
+        updateEnvironmentVars
+    }
+}
+
+const envManager = setupEnvironment()
+
+// Handle auth type selection
+authTypeSelect.addEventListener('change', () => {
+    const authType = authTypeSelect.value
+    
+    // Hide all auth inputs first
+    basicAuthInputs.classList.add('d-none')
+    bearerTokenInput.classList.add('d-none')
+    
+    // Show relevant inputs based on selection
+    if (authType === 'basic') {
+        basicAuthInputs.classList.remove('d-none')
+    } else if (authType === 'bearer') {
+        bearerTokenInput.classList.remove('d-none')
+    }
+})
+
+// Initialize collections
+let collections = {}
+
+// Load saved collections from localStorage
+try {
+    const savedCollections = localStorage.getItem('apiCallerCollections')
+    if (savedCollections) {
+        collections = JSON.parse(savedCollections)
+    }
+} catch (error) {
+    console.error('Failed to load collections:', error)
+}
+
+// Initialize with default collection if empty
+if (Object.keys(collections).length === 0) {
+    collections['My Collection'] = []
+}
+
+// Update collection selector
+function updateCollectionSelector() {
+    collectionSelect.innerHTML = ''
+    Object.keys(collections).forEach(collection => {
+        const option = document.createElement('option')
+        option.value = collection
+        option.textContent = collection
+        collectionSelect.appendChild(option)
+    })
+}
+
+updateCollectionSelector()
+
+// Create new collection
+newCollectionBtn.addEventListener('click', () => {
+    const name = prompt('New collection name:')
+    if (name && !collections[name]) {
+        collections[name] = []
+        updateCollectionSelector()
+        collectionSelect.value = name
+        saveCollections()
+    }
+})
+
+// Save collections to localStorage
+function saveCollections() {
+    localStorage.setItem('apiCallerCollections', JSON.stringify(collections))
+}
+
+// Add multipart field button event listener
+addMultipartFieldBtn.addEventListener('click', () => {
+    multipartFieldsContainer.append(createMultipartField())
+})
+
+// Add query parameter button event listener
+addQueryParamsBtn.addEventListener('click', () => {
+    queryParamsContainer.append(CreateKeyValuePair())
+})
+
+// Add request header button event listener
+addRequestHeadersBtn.addEventListener('click', () => {
+    requestHeadersContainer.append(CreateKeyValuePair())
+})
+
+// Create multipart field element
+function createMultipartField() {
+    const element = multipartFieldTemplate.content.cloneNode(true)
+    const fieldTypeSelect = element.querySelector('[data-field-type]')
+    const fileInput = element.querySelector('[data-file]')
+    const textInput = element.querySelector('[data-text]')
+
+    // Initialize file input as visible by default
+    fileInput.classList.remove('d-none')
+    textInput.classList.add('d-none')
+
+    // Handle field type change
+    fieldTypeSelect.addEventListener('change', () => {
+        if (fieldTypeSelect.value === 'file') {
+            fileInput.classList.remove('d-none')
+            textInput.classList.add('d-none')
+        } else {
+            fileInput.classList.add('d-none')
+            textInput.classList.remove('d-none')
+        }
+    })
+
+    // Handle remove button click
+    element.querySelector('[data-remove-btn]').addEventListener('click', (e) => {
+        e.target.closest('[data-multipart-field]').remove()
+    })
+
+    return element
+}
+
+// Configure Axios interceptors
+axios.interceptors.request.use(request => {
+    request.customData = request.customData || {}
+    request.customData.startTime = new Date().getTime()
+    return request
+})
+
+// Update response time
+function updateEndTime(response) {
+    response.customData = response.customData || {}
+    response.customData.time = new Date().getTime() - response.config.customData.startTime
+    return response
+}
+
+// Configure Axios response interceptors
+axios.interceptors.response.use(updateEndTime, e => {
+    return Promise.reject(updateEndTime(e.response))
+})
+
+// Handle form submission
+form.addEventListener('submit', (e) => {
+    e.preventDefault()
+
+    // Get selected body type
+    const bodyType = bodyTypeSelector.value
+    
+    // Get URL with environment variables applied
+    const url = envManager.applyEnvironmentVars(urlInput.value)
+    
+    // Get method
+    const method = methodSelect.value
+
+    // Prepare data based on body type
+    let data = null
+    
+    if (bodyType === 'json') {
+        try {
+            data = JSON.parse(requestEditor.state.doc.toString() || '{}')
+        } catch (error) {
+            alert('Malformed JSON data')
+            return
+        }
+    } else if (bodyType === 'formdata') {
+        const formData = new FormData()
+        
+        // Handle Multipart Fields
+        multipartFieldsContainer.querySelectorAll('[data-multipart-field]').forEach(field => {
+            const key = field.querySelector('[data-key]').value
+            const fieldType = field.querySelector('[data-field-type]').value
+
+            if (fieldType === 'file') {
+                const file = field.querySelector('[data-file]').files[0]
+                if (file) {
+                    formData.append(key, file)
+                }
+            } else {
+                const text = envManager.applyEnvironmentVars(field.querySelector('[data-text]').value)
+                if (text) {
+                    formData.append(key, text)
+                }
+            }
+        })
+        
+        data = formData
+    }
+
+    // Convert query params & headers with environment variables applied
+    const params = keyValuePairsToObject(queryParamsContainer, true)
+    let headers = keyValuePairsToObject(requestHeadersContainer, true)
+
+    // Set content type based on body type
+    if (bodyType === 'json') {
+        headers['Content-Type'] = 'application/json'
+    }
+    
+    // Handle authentication
+    const authType = authTypeSelect.value
+    if (authType === 'basic') {
+        const username = document.querySelector('[data-basic-username]').value
+        const password = document.querySelector('[data-basic-password]').value
+        if (username && password) {
+            const base64Credentials = btoa(`${username}:${password}`)
+            headers['Authorization'] = `Basic ${base64Credentials}`
+        }
+    } else if (authType === 'bearer') {
+        const token = envManager.applyEnvironmentVars(document.querySelector('[data-bearer-token-input]').value)
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`
+        }
+    }
+
+    // Clear previous response
+    dataResponseSection.classList.add('d-none')
+    
+    // Add request to history
+    addToRequestHistory(method, url)
+
+    // Make Axios Request
+    axios({
+        url,
+        method,
+        params,
+        headers,
+        data,
+        validateStatus: () => true, // Accept any status code
+    })
+    .catch((e) => e)
+    .then((response) => {
+        dataResponseSection.classList.remove('d-none')
+        updateResponseDetails(response)
+        updateResponseEditor(response.data)
+        updateResponseHeaders(response.headers)
+        console.log(response)
+    })
+    .catch(error => {
+        console.error('Request failed:', error)
+        alert('Request failed: ' + error.message)
+    })
+})
+
+// Update response details
+function updateResponseDetails(response) {
+    ResponseStatus.textContent = response.status
+    ResponseTime.textContent = response.customData.time
+    
+    // Add status code color
+    if (response.status < 300) {
+        ResponseStatus.className = 'text-success'
+    } else if (response.status < 400) {
+        ResponseStatus.className = 'text-warning'
+    } else {
+        ResponseStatus.className = 'text-danger'
+    }
+    
+    ResponseSize.textContent = prettyBytes(
+        JSON.stringify(response.data).length + 
+        JSON.stringify(response.headers).length
+    )
+}
+
+// Update response headers
+function updateResponseHeaders(headers) {
+    ResponseHeaderContainer.innerHTML = ''
+    Object.entries(headers).forEach(([key, value]) => {
+        const keyElement = document.createElement('div')
+        keyElement.textContent = key
+        ResponseHeaderContainer.append(keyElement)
+        const valueElement = document.createElement('div')
+        valueElement.textContent = value
+        ResponseHeaderContainer.append(valueElement)
+    })
+}
+
+// Convert key-value pairs to object
+function keyValuePairsToObject(container, applyEnv = false) {
+    const pairs = container.querySelectorAll('[data-key-value-pair]')
+    return [...pairs].reduce((data, pair) => {
+        const key = pair.querySelector('[data-key]').value
+        let value = pair.querySelector('[data-value]').value
+        
+        // Apply environment variables if needed
+        if (applyEnv) {
+            value = envManager.applyEnvironmentVars(value)
+        }
+        
+        if (key === '') return data
+        return { ...data, [key]: value }
+    }, {})
+}
+
+// Create key-value pair element
+function CreateKeyValuePair() {
+    const element = keyValueTemplate.content.cloneNode(true)
+    element.querySelector('[data-remove-btn]').addEventListener('click', (e) => {
+        e.target.closest('[data-key-value-pair]').remove()
+    })
+    return element
+}
+
+// Initialize with one query param and header
+queryParamsContainer.append(CreateKeyValuePair())
+requestHeadersContainer.append(CreateKeyValuePair())
+
+// Save current request
+saveRequestBtn.addEventListener('click', () => {
+    const name = prompt('Enter a name for this request:')
+    if (!name) return
+    
+    const request = getCurrentRequest()
+    
+    // Save to localStorage
+    let savedRequests = JSON.parse(localStorage.getItem('apiCallerRequests') || '[]')
+    savedRequests.push({
+        name,
+        request
+    })
+    localStorage.setItem('apiCallerRequests', JSON.stringify(savedRequests))
+    
+    updateRequestHistoryList()
+})
+
+// Save to collection
+saveToCollectionBtn.addEventListener('click', () => {
+    const name = prompt('Enter a name for this request:')
+    if (!name) return
+    
+    const collectionName = collectionSelect.value
+    if (!collections[collectionName]) {
+        alert('Collection not found')
+        return
+    }
+    
+    const request = getCurrentRequest()
+    
+    // Add to collection
+    collections[collectionName].push({
+        name,
+        request
+    })
+    
+    saveCollections()
+})
+
+// Get current request data
+function getCurrentRequest() {
+    return {
+        url: urlInput.value,
+        method: methodSelect.value,
+        bodyType: bodyTypeSelector.value,
+        json: requestEditor.state.doc.toString(),
+        queryParams: getKeyValuePairs(queryParamsContainer),
+        headers: getKeyValuePairs(requestHeadersContainer),
+        multipartFields: getMultipartFields(),
+        auth: {
+            type: authTypeSelect.value,
+            basicUsername: document.querySelector('[data-basic-username]')?.value || '',
+            basicPassword: document.querySelector('[data-basic-password]')?.value || '',
+            bearerToken: document.querySelector('[data-bearer-token-input]')?.value || ''
+        }
+    }
+}
+
+// Get key-value pairs data
+function getKeyValuePairs(container) {
+    const pairs = container.querySelectorAll('[data-key-value-pair]')
+    return [...pairs].map(pair => {
+        return {
+            key: pair.querySelector('[data-key]').value,
+            value: pair.querySelector('[data-value]').value
+        }
+    }).filter(pair => pair.key || pair.value)
+}
+
+// Get multipart fields data
+function getMultipartFields() {
+    const fields = multipartFieldsContainer.querySelectorAll('[data-multipart-field]')
+    return [...fields].map(field => {
+        return {
+            key: field.querySelector('[data-key]').value,
+            type: field.querySelector('[data-field-type]').value,
+            text: field.querySelector('[data-text]').value
+            // Can't save file inputs
+        }
+    }).filter(field => field.key)
+}
+
+// Add to request history
+function addToRequestHistory(method, url) {
+    const timestamp = new Date().toLocaleTimeString()
+    const item = document.createElement('li')
+    item.className = 'list-group-item'
+    item.innerHTML = `<span class="badge bg-secondary">${method}</span> <span class="text-truncate">${url}</span> <small class="text-muted">${timestamp}</small>`
+    requestHistoryList.prepend(item)
+    
+    // Limit history to 10 items
+    if (requestHistoryList.children.length > 10) {
+        requestHistoryList.lastChild.remove()
+    }
+}
+
+// Update request history list
+function updateRequestHistoryList() {
+    const savedRequests = JSON.parse(localStorage.getItem('apiCallerRequests') || '[]')
+    
+    // Populate load request dropdown
+    const dropdown = document.querySelector('[data-load-request-dropdown]')
+    dropdown.innerHTML = ''
+    
+    savedRequests.forEach((saved, index) => {
+        const item = document.createElement('a')
+        item.className = 'dropdown-item'
+        item.href = '#'
+        item.textContent = saved.name
+        item.addEventListener('click', (e) => {
+            e.preventDefault()
+            loadRequest(saved.request)
+        })
+        dropdown.appendChild(item)
+    })
+    
+    // Add collection requests
+    Object.entries(collections).forEach(([collectionName, requests]) => {
+        if (requests.length > 0) {
+            // Add collection header
+            const header = document.createElement('h6')
+            header.className = 'dropdown-header'
+            header.textContent = collectionName
+            dropdown.appendChild(header)
+            
+            // Add requests
+            requests.forEach(saved => {
+                const item = document.createElement('a')
+                item.className = 'dropdown-item ps-4'
+                item.href = '#'
+                item.textContent = saved.name
+                item.addEventListener('click', (e) => {
+                    e.preventDefault()
+                    loadRequest(saved.request)
+                })
+                dropdown.appendChild(item)
+            })
+            
+            // Add divider
+            const divider = document.createElement('div')
+            divider.className = 'dropdown-divider'
+            dropdown.appendChild(divider)
+        }
+    })
+}
+
+// Load saved request
+function loadRequest(request) {
+    // Set URL and method
+    urlInput.value = request.url
+    methodSelect.value = request.method
+    
+    // Set body type
+    bodyTypeSelector.value = request.bodyType
+    bodyTypeSelector.dispatchEvent(new Event('change'))
+    
+    // Set JSON if available
+    if (request.json) {
+        requestEditor.dispatch({
+            changes: {
+                from: 0,
+                to: requestEditor.state.doc.length,
+                insert: request.json
+            }
+        })
+    }
+    
+    // Set query params
+    queryParamsContainer.innerHTML = ''
+    if (request.queryParams && request.queryParams.length > 0) {
+        request.queryParams.forEach(param => {
+            const element = CreateKeyValuePair()
+            element.querySelector('[data-key]').value = param.key
+            element.querySelector('[data-value]').value = param.value
+            queryParamsContainer.appendChild(element)
+        })
+    } else {
+        queryParamsContainer.appendChild(CreateKeyValuePair())
+    }
+    
+    // Set headers
+    requestHeadersContainer.innerHTML = ''
+    if (request.headers && request.headers.length > 0) {
+        request.headers.forEach(header => {
+            const element = CreateKeyValuePair()
+            element.querySelector('[data-key]').value = header.key
+            element.querySelector('[data-value]').value = header.value
+            requestHeadersContainer.appendChild(element)
+        })
+    } else {
+        requestHeadersContainer.appendChild(CreateKeyValuePair())
+    }
+    
+    // Set multipart fields
+    multipartFieldsContainer.innerHTML = ''
+    if (request.multipartFields && request.multipartFields.length > 0) {
+        request.multipartFields.forEach(field => {
+            const element = createMultipartField()
+            element.querySelector('[data-key]').value = field.key
+            element.querySelector('[data-field-type]').value = field.type
+            element.querySelector('[data-text]').value = field.text
+            
+            // Update visibility
+            const fileInput = element.querySelector('[data-file]')
+            const textInput = element.querySelector('[data-text]')
+            if (field.type === 'file') {
+                fileInput.classList.remove('d-none')
+                textInput.classList.add('d-none')
+            } else {
+                fileInput.classList.add('d-none')
+                textInput.classList.remove('d-none')
+            }
+            
+            multipartFieldsContainer.appendChild(element)
+        })
+    }
+    
+    // Set auth
+    if (request.auth) {
+        authTypeSelect.value = request.auth.type
+        authTypeSelect.dispatchEvent(new Event('change'))
+        
+        if (request.auth.type === 'basic') {
+            document.querySelector('[data-basic-username]').value = request.auth.basicUsername
+            document.querySelector('[data-basic-password]').value = request.auth.basicPassword
+        } else if (request.auth.type === 'bearer') {
+            document.querySelector('[data-bearer-token-input]').value = request.auth.bearerToken
+        }
+    }
+}
+
+// Initialize body type selector event listener
+bodyTypeSelector.addEventListener('change', () => {
+    const bodyType = bodyTypeSelector.value
+    
+    // Show/hide appropriate tabs based on body type
+    const jsonTab = document.querySelector('#json')
+    const multipartTab = document.querySelector('#multipart')
+    
+    if (bodyType === 'json') {
+        // Show JSON tab, hide multipart tab
+        document.querySelector('#json-tabs').click()
+        document.querySelector('#multipart-tabs').classList.add('d-none')
+        document.querySelector('#json-tabs').classList.remove('d-none')
+    } else if (bodyType === 'formdata') {
+        // Show multipart tab, hide JSON tab
+        document.querySelector('#multipart-tabs').click()
+        document.querySelector('#json-tabs').classList.add('d-none')
+        document.querySelector('#multipart-tabs').classList.remove('d-none')
+    } else {
+        // Hide both tabs for 'none'
+        document.querySelector('#query-params-tabs').click()
+        document.querySelector('#json-tabs').classList.add('d-none')
+        document.querySelector('#multipart-tabs').classList.add('d-none')
+    }
+})
+
+// Add export request button event listener
+document.querySelector('[data-export-request]').addEventListener('click', () => {
+    const request = getCurrentRequest()
+    const json = JSON.stringify(request, null, 2)
+    
+    // Create download link
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'api-request.json'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+})
+
+// Add import request button event listener
+document.querySelector('[data-import-request]').addEventListener('click', () => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'application/json'
+    
+    input.addEventListener('change', (e) => {
+        const file = e.target.files[0]
+        if (!file) return
+        
+        const reader = new FileReader()
+        reader.onload = (event) => {
+            try {
+                const request = JSON.parse(event.target.result)
+                loadRequest(request)
+            } catch (error) {
+                alert('Invalid request file')
+            }
+        }
+        reader.readAsText(file)
+    })
+    
+    input.click()
+})
+
+// Add code generation button event listener
+document.querySelector('[data-generate-code]').addEventListener('click', () => {
+    const request = getCurrentRequest()
+    
+    // Generate code tabs
+    const codeModal = new bootstrap.Modal(document.querySelector('#codeGenerationModal'))
+    
+    // Generate Fetch code
+    const fetchCode = generateFetchCode(request)
+    document.querySelector('#fetchCode').textContent = fetchCode
+    
+    // Generate Axios code
+    const axiosCode = generateAxiosCode(request)
+    document.querySelector('#axiosCode').textContent = axiosCode
+    
+    // Generate cURL code
+    const curlCode = generateCurlCode(request)
+    document.querySelector('#curlCode').textContent = curlCode
+    
+    codeModal.show()
+})
+
+// Generate Fetch code
+function generateFetchCode(request) {
+    let code = `// Fetch API request
+const url = new URL("${request.url}");
+`
+    
+    // Add query params
+    if (request.queryParams && request.queryParams.length > 0) {
+        code += '\n// Add query parameters\n'
+        request.queryParams.forEach(param => {
+            if (param.key) {
+                code += `url.searchParams.append("${param.key}", "${param.value}");\n`
+            }
+        })
+    }
+    
+    code += `
+const options = {
+  method: "${request.method}",
+  headers: {
+`
+    
+    // Add headers
+    if (request.headers && request.headers.length > 0) {
+        request.headers.forEach(header => {
+            if (header.key) {
+                code += `    "${header.key}": "${header.value}",\n`
+            }
+        })
+    }
+    
+    // Add auth header if needed
+    if (request.auth.type === 'basic') {
+        code += `    "Authorization": "Basic ${btoa(`${request.auth.basicUsername}:${request.auth.basicPassword}`)}",\n`
+    } else if (request.auth.type === 'bearer') {
+        code += `    "Authorization": "Bearer ${request.auth.bearerToken}",\n`
+    }
+    
+    // Add body
+    if (request.bodyType === 'json') {
+        code += `  },
+  body: JSON.stringify(${request.json})
+};
+`
+    } else if (request.bodyType === 'formdata') {
+        code += `  },
+  body: new FormData() // Populate with your form data
+};
+
+// Add form data
+const formData = new FormData();
+`
+        if (request.multipartFields && request.multipartFields.length > 0) {
+            request.multipartFields.forEach(field => {
+                if (field.key) {
+                    if (field.type === 'text') {
+                        code += `formData.append("${field.key}", "${field.text}");\n`
+                    } else {
+                        code += `// formData.append("${field.key}", fileInput.files[0]);\n`
+                    }
+                }
+            })
+        }
+        
+        code += `
+options.body = formData;
+`
+    } else {
+        code += `  }
+};
+`
+    }
+    
+    code += `
+fetch(url, options)
+  .then(response => response.json())
+  .then(data => console.log(data))
+  .catch(error => console.error('Error:', error));
+`
+    
+    return code
+}
+
+// Generate Axios code
+function generateAxiosCode(request) {
+    let code = `// Axios request
+import axios from 'axios';
+
+`
+    
+    if (request.bodyType === 'formdata') {
+        code += `// Create form data
+const formData = new FormData();
+`
+        if (request.multipartFields && request.multipartFields.length > 0) {
+            request.multipartFields.forEach(field => {
+                if (field.key) {
+                    if (field.type === 'text') {
+                        code += `formData.append("${field.key}", "${field.text}");\n`
+                    } else {
+                        code += `// formData.append("${field.key}", document.querySelector('input[type="file"]').files[0]);\n`
+                    }
+                }
+            })
+        }
+        code += '\n'
+    }
+    
+    code += `// Request configuration
+const config = {
+  method: "${request.method}",
+  url: "${request.url}",
+`
+    
+    // Add params
+    if (request.queryParams && request.queryParams.length > 0) {
+        const params = {}
+        request.queryParams.forEach(param => {
+            if (param.key) {
+                params[param.key] = param.value
+            }
+        })
+        
+        if (Object.keys(params).length > 0) {
+            code += `  params: ${JSON.stringify(params, null, 4).replace(/\n/g, '\n  ')},\n`
+        }
+    }
+    
+    // Add headers
+    const headers = {}
+    if (request.headers && request.headers.length > 0) {
+        request.headers.forEach(header => {
+            if (header.key) {
+                headers[header.key] = header.value
+            }
+        })
+    }
+    
+    // Add auth header if needed
+    if
